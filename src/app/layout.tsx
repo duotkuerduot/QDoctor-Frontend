@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QDoctor Ai",
+  title: "QDoctor AI",
   description: "Your medical companion"
 };
 
