@@ -41,6 +41,10 @@ export default function ChatCard({ onMessageSent, disabled = false }: ChatCardPr
         setInput("");
         setIsLoading(true);
 
+        if (onMessageSent) {
+            onMessageSent(message, null);
+        }
+
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
