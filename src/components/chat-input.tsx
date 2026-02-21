@@ -41,30 +41,47 @@ export default function ChatCard({ onMessageSent, disabled = false }: ChatCardPr
         setInput("");
         setIsLoading(true);
 
+        // If we have a callback (chat page), immediately add user message and show typing
         if (onMessageSent) {
+            // Call onMessageSent with just the user message first to add it immediately
             onMessageSent(message, null);
         }
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, sessionId }),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message,
+                    sessionId,
+                }),
             });
 
-            if (!response.ok) throw new Error("HTTP error");
-
-            const data: ApiResponse = await response.json();
-
-            if (onMessageSent) {
-                onMessageSent(message, data);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-        } catch (error) {
+            const data: ApiResponse = await response.json();
+            console.log('Response from backend:', data);
+            
             if (onMessageSent) {
-                onMessageSent(message, {
-                    response: "Sorry, I encountered an error.",
-                    error: true
+                // Call onMessageSent again with the response to add assistant message
+                onMessageSent(message, data);
+            } else {
+                // If no callback (home page), redirect to /new with state
+                router.push(`/new?sessionId=${sessionId}&initialMessage=${encodeURIComponent(message)}&response=${encodeURIComponent(JSON.stringify(data))}`);
+            }
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            // Handle error - you might want to add error state handling here
+            if (onMessageSent) {
+                // Add error message
+                onMessageSent(message, { 
+                    response: "Sorry, I encountered an error while processing your request. Please try again.",
+                    error: true 
                 });
             }
         } finally {
