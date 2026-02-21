@@ -16,17 +16,24 @@ interface ApiResponse {
 }
 
 interface ChatCardProps {
+  onUserMessage?: (message: string) => void;
+  onAssistantMessage?: (message: string, response: ApiResponse) => void;
+  /** @deprecated Use onUserMessage + onAssistantMessage instead */
   onMessageSent?: (message: string, response: ApiResponse | null) => void;
   disabled?: boolean;
 }
 
-export default function ChatCard({ onMessageSent, disabled = false }: ChatCardProps) {
+export default function ChatCard({
+  onUserMessage,
+  onAssistantMessage,
+  onMessageSent,
+  disabled = false,
+}: ChatCardProps) {
     const router = useRouter();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [sessionId] = useState(() => {
-        // Generate a unique session ID
         return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     });
 
@@ -41,9 +48,9 @@ export default function ChatCard({ onMessageSent, disabled = false }: ChatCardPr
         setInput("");
         setIsLoading(true);
 
-        // If we have a callback (chat page), immediately add user message and show typing
-        if (onMessageSent) {
-            // Call onMessageSent with just the user message first to add it immediately
+        if (onUserMessage) {
+            onUserMessage(message);
+        } else if (onMessageSent) {
             onMessageSent(message, null);
         }
 
@@ -65,24 +72,28 @@ export default function ChatCard({ onMessageSent, disabled = false }: ChatCardPr
 
             const data: ApiResponse = await response.json();
             console.log('Response from backend:', data);
-            
-            if (onMessageSent) {
-                // Call onMessageSent again with the response to add assistant message
+
+            if (onAssistantMessage) {
+                onAssistantMessage(message, data);
+            } else if (onMessageSent) {
                 onMessageSent(message, data);
             } else {
-                // If no callback (home page), redirect to /new with state
-                router.push(`/new?sessionId=${sessionId}&initialMessage=${encodeURIComponent(message)}&response=${encodeURIComponent(JSON.stringify(data))}`);
+                router.push(
+                    `/new?sessionId=${sessionId}&initialMessage=${encodeURIComponent(message)}&response=${encodeURIComponent(JSON.stringify(data))}`
+                );
             }
-            
+
         } catch (error) {
             console.error('Error sending message:', error);
-            // Handle error - you might want to add error state handling here
-            if (onMessageSent) {
-                // Add error message
-                onMessageSent(message, { 
-                    response: "Sorry, I encountered an error while processing your request. Please try again.",
-                    error: true 
-                });
+            const errorResponse: ApiResponse = {
+                response: "Sorry, I encountered an error while processing your request. Please try again.",
+                error: true,
+            };
+
+            if (onAssistantMessage) {
+                onAssistantMessage(message, errorResponse);
+            } else if (onMessageSent) {
+                onMessageSent(message, errorResponse);
             }
         } finally {
             setIsLoading(false);
@@ -113,31 +124,7 @@ export default function ChatCard({ onMessageSent, disabled = false }: ChatCardPr
                             />
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-2">
-                            <div className="flex flex-row gap-2">
-                            {/* 
-                                <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-6 w-6 rounded-full bg-border text-primary"
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    className="h-6 px-2 rounded-full bg-primary text-gray-800 text-xs flex items-center gap-1"
-                                >
-                                    <Globe className="h-3 w-3" />
-                                    Search
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    className="h-6 px-2 rounded-full bg-primary text-gray-800 text-xs flex items-center gap-1"
-                                >
-                                    <Brain className="h-3 w-3" />
-                                    Reason
-                                </Button> 
-                            */}
-                            </div>
+                            <div className="flex flex-row gap-2" />
 
                             <Button
                                 size="icon"
