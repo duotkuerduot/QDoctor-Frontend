@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const BACKEND = process.env.BACKEND_URL ?? 'https://duotkuer-qdoctor.hf.space';
+    const BACKEND = process.env.BACKEND_URL ?? 'https://duotkuerduot-qdoctor.hf.space';
     
     // The backend expects query as a URL parameter, not in the body
     const url = new URL(`${BACKEND}/ask`);
