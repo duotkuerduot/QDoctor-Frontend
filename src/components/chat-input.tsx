@@ -29,21 +29,74 @@ export default function ChatCard({
   onMessageSent,
   disabled = false,
 }: ChatCardProps) {
+    const router = useRouter();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [input, setInput] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [sessionId] = useState(() => {
+        return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    });
 
     useEffect(() => {
         textareaRef.current?.focus();
     }, []);
 
-    const handleSendMessage = () => {
-        if (!input.trim() || disabled) return;
+    const handleSendMessage = async () => {
+        if (!input.trim() || isLoading || disabled) return;
+
         const message = input.trim();
         setInput("");
+        setIsLoading(true);
+
         if (onUserMessage) {
             onUserMessage(message);
         } else if (onMessageSent) {
             onMessageSent(message, null);
+        }
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message,
+                    sessionId,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data: ApiResponse = await response.json();
+            console.log('Response from backend:', data);
+
+            if (onAssistantMessage) {
+                onAssistantMessage(message, data);
+            } else if (onMessageSent) {
+                onMessageSent(message, data);
+            } else {
+                router.push(
+                    `/new?sessionId=${sessionId}&initialMessage=${encodeURIComponent(message)}&response=${encodeURIComponent(JSON.stringify(data))}`
+                );
+            }
+
+        } catch (error) {
+            console.error('Error sending message:', error);
+            const errorResponse: ApiResponse = {
+                response: "Sorry, I encountered an error while processing your request. Please try again.",
+                error: true,
+            };
+
+            if (onAssistantMessage) {
+                onAssistantMessage(message, errorResponse);
+            } else if (onMessageSent) {
+                onMessageSent(message, errorResponse);
+            }
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -66,7 +119,7 @@ export default function ChatCard({
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyPress={handleKeyPress}
-                                disabled={disabled}
+                                disabled={isLoading || disabled}
                                 className="text-primary text-lg w-full outline-0 resize-none p-4 shadow-none bg-transparent border-0 placeholder-primary focus-visible:ring-0 focus-visible:ring-offset-0 scrollbar-hide"
                             />
                         </div>
@@ -76,7 +129,7 @@ export default function ChatCard({
                             <Button
                                 size="icon"
                                 onClick={handleSendMessage}
-                                disabled={disabled}
+                                disabled={isLoading || disabled}
                                 className="h-6 w-6 rounded-lg shadow-none bg-border text-primary p-4 overflow-hidden relative"
                             >
                                 <AnimatePresence mode="wait">
@@ -89,7 +142,7 @@ export default function ChatCard({
                                             transition={{ duration: 0.2 }}
                                             className="absolute inset-0 flex items-center justify-center"
                                         >
-                                            <Send className="h-5 w-5" />
+                                            <Send className={`h-5 w-5 ${isLoading ? 'animate-pulse' : ''}`} />
                                         </motion.span>
                                     ) : (
                                         <motion.span
