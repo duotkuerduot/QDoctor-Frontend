@@ -16,7 +16,7 @@ type AuthModalProps = {
   onTabChange: (tab: AuthTab) => void
   onClose: () => void
 }
-
+ 
 const ROLE_OPTIONS = [
   "Doctor",
   "Nurse",
