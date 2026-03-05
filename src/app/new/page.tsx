@@ -5,6 +5,8 @@ import ChatCard from "@/components/chat-input";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/provider/auth-provider";
 
 interface Message {
   id: number;
@@ -30,6 +32,7 @@ interface ParsedResponse {
 
 const ChatScreen = () => {
   const searchParams = useSearchParams();
+  const { openAuthModal } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isScrollHovered, setIsScrollHovered] = useState(false);
@@ -127,6 +130,15 @@ const ChatScreen = () => {
   // ✅ Prevent duplicate submits
   const handleSubmit = async (message: string) => {
     if (isRequesting.current || !message.trim()) return;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      openAuthModal("login");
+      return;
+    }
+
     isRequesting.current = true;
 
     console.log("Submitting message:", message);
@@ -143,9 +155,18 @@ const ChatScreen = () => {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ message }),
       });
+
+      if (response.status === 401) {
+        await supabase.auth.signOut();
+        openAuthModal("login");
+        throw new Error("Session expired. Please sign in again.");
+      }
 
       if (!response.ok) {
         const errorData = await response.json();

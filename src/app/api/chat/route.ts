@@ -5,6 +5,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { message } = body;
+    const authorization = request.headers.get("authorization");
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return NextResponse.json(
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
+        ...(authorization ? { Authorization: authorization } : {}),
       },
       body: '', // Empty body as shown in the curl example
     });
