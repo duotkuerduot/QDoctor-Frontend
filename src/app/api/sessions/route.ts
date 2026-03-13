@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     const BACKEND =
-      process.env.BACKEND_URL ?? "http://127.0.0.1:8000";// "https://duotkuerduot-qdoctor.hf.space";
+      process.env.BACKEND_URL ?? "https://duotkuerduot-qdoctor.hf.space";
 
     const res = await fetch(`${BACKEND}/sessions`, {
       headers: { Authorization: authorization },

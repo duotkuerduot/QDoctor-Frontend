@@ -2,7 +2,7 @@
 import { NextRequest } from "next/server";
 
 const BACKEND =
-      process.env.BACKEND_URL ?? "http://127.0.0.1:8000";// "https://duotkuerduot-qdoctor.hf.space";
+      process.env.BACKEND_URL ?? "https://duotkuerduot-qdoctor.hf.space";
 
 // GET /api/sessions/[id] — load messages (active path with variant info)
 export async function GET(
