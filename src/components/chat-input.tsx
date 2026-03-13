@@ -7,29 +7,18 @@ import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/provider/auth-provider"
 
-interface ApiResponse {
-  response?: string;
-  message?: string;
-  content?: string;
-  data?: string;
-  context_sources?: string[];
-  error?: boolean;
-}
-
 interface ChatCardProps {
-  onUserMessage?: (message: string) => void
-  onAssistantMessage?: (message: string, response: ApiResponse) => void
-  /** @deprecated Use onUserMessage + onAssistantMessage instead */
-  onMessageSent?: (message: string, response: ApiResponse | null) => void
+  /**
+   * If provided, the component acts as an in-page input (chat screen mode).
+   * The parent handles the API call.
+   */
+  onMessageSent?: (message: string) => void
   disabled?: boolean
 }
 
 export default function ChatCard({
-  onUserMessage,
-  onAssistantMessage,
   onMessageSent,
   disabled = false,
 }: ChatCardProps) {
@@ -37,12 +26,8 @@ export default function ChatCard({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { isAuthenticated, openAuthModal } = useAuth()
   const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [sessionId] = useState(() => {
-    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
-  })
 
-  const inputDisabled = isLoading || disabled || !isAuthenticated
+  const inputDisabled = disabled || !isAuthenticated
 
   useEffect(() => {
     if (!inputDisabled) {
@@ -54,8 +39,8 @@ export default function ChatCard({
     openAuthModal("login")
   }
 
-  const handleSendMessage = async () => {
-    if (isLoading || disabled) return
+  const handleSendMessage = () => {
+    if (disabled) return
 
     if (!isAuthenticated) {
       handleAuthRequired()
@@ -64,74 +49,15 @@ export default function ChatCard({
 
     if (!input.trim()) return
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) {
-      handleAuthRequired()
-      return
-    }
-
     const message = input.trim()
     setInput("")
-    setIsLoading(true)
 
-    if (onUserMessage) {
-      onUserMessage(message)
-    } else if (onMessageSent) {
-      onMessageSent(message, null)
-    }
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          message,
-          sessionId,
-        }),
-      })
-
-      if (response.status === 401) {
-        await supabase.auth.signOut()
-        handleAuthRequired()
-        throw new Error("Session expired. Please sign in again.")
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data: ApiResponse = await response.json()
-      console.log("Response from backend:", data)
-
-      if (onAssistantMessage) {
-        onAssistantMessage(message, data)
-      } else if (onMessageSent) {
-        onMessageSent(message, data)
-      } else {
-        router.push(
-          `/new?sessionId=${sessionId}&initialMessage=${encodeURIComponent(message)}&response=${encodeURIComponent(JSON.stringify(data))}`
-        )
-      }
-    } catch (error) {
-      console.error("Error sending message:", error)
-      const errorResponse: ApiResponse = {
-        response:
-          "Sorry, I encountered an error while processing your request. Please try again.",
-        error: true,
-      }
-
-      if (onAssistantMessage) {
-        onAssistantMessage(message, errorResponse)
-      } else if (onMessageSent) {
-        onMessageSent(message, errorResponse)
-      }
-    } finally {
-      setIsLoading(false)
+    if (onMessageSent) {
+      // Chat screen mode: delegate to parent
+      onMessageSent(message)
+    } else {
+      // Home page mode: navigate INSTANTLY, chat page handles the API call
+      router.push(`/new?q=${encodeURIComponent(message)}`)
     }
   }
 
@@ -143,10 +69,10 @@ export default function ChatCard({
   }
 
   return (
-    <div className="w-full p-4">
-      <div className="mx-auto max-w-4xl space-y-4">
+    <div className="w-full px-2 sm:px-4 pb-2 sm:pb-4">
+      <div className="mx-auto max-w-4xl space-y-2 sm:space-y-4">
         <div>
-          <div className="rounded-3xl border-2 border-border p-4 pt-1">
+          <div className="rounded-2xl sm:rounded-3xl border-2 border-border p-2 sm:p-4 pt-1 sm:pt-1">
             <div className="relative flex flex-row items-center">
               <Textarea
                 ref={textareaRef}
@@ -159,7 +85,8 @@ export default function ChatCard({
                 onChange={(event) => setInput(event.target.value)}
                 onKeyPress={handleKeyPress}
                 disabled={inputDisabled}
-                className="text-primary placeholder-primary scrollbar-hide w-full resize-none border-0 bg-transparent p-4 text-lg shadow-none outline-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                rows={1}
+                className="text-primary placeholder:text-muted-foreground/60 scrollbar-hide w-full resize-none border-0 bg-transparent p-2 sm:p-4 text-sm sm:text-lg shadow-none outline-0 focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[36px] sm:min-h-[56px] max-h-[120px] sm:max-h-[200px]"
               />
               {!isAuthenticated ? (
                 <button
@@ -170,14 +97,14 @@ export default function ChatCard({
                 />
               ) : null}
             </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="mt-1 sm:mt-2 flex items-center justify-between gap-2">
               <div className="flex flex-row gap-2" />
 
               <Button
                 size="icon"
                 onClick={handleSendMessage}
                 disabled={inputDisabled}
-                className="relative h-6 w-6 overflow-hidden rounded-lg bg-border p-4 text-primary shadow-none"
+                className="relative h-8 w-8 sm:h-10 sm:w-10 overflow-hidden rounded-lg bg-border p-0 text-primary shadow-none hover:bg-border/80"
               >
                 <AnimatePresence mode="wait">
                   {input.trim() ? (
@@ -189,9 +116,7 @@ export default function ChatCard({
                       transition={{ duration: 0.2 }}
                       className="absolute inset-0 flex items-center justify-center"
                     >
-                      <Send
-                        className={`h-5 w-5 ${isLoading ? "animate-pulse" : ""}`}
-                      />
+                      <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                     </motion.span>
                   ) : (
                     <motion.span
@@ -202,7 +127,7 @@ export default function ChatCard({
                       transition={{ duration: 0.2 }}
                       className="absolute inset-0 flex items-center justify-center"
                     >
-                      <Mic className="h-5 w-5" />
+                      <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
                     </motion.span>
                   )}
                 </AnimatePresence>

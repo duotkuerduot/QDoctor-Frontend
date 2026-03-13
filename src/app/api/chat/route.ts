@@ -1,57 +1,62 @@
-// app/api/chat/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+// src/app/api/chat/route.ts
+import { NextRequest } from "next/server";
+
+export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message } = body;
+    const { message, history, session_id, parent_id, assistant_retry } = body;
     const authorization = request.headers.get("authorization");
 
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      return NextResponse.json(
-        { error: 'Message is required and must be a non-empty string' },
-        { status: 400 }
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return new Response(
+        JSON.stringify({ error: "Message is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const BACKEND = process.env.BACKEND_URL ?? 'https://duotkuerduot-qdoctor.hf.space';
-    
-    // The backend expects query as a URL parameter, not in the body
-    const url = new URL(`${BACKEND}/ask`);
-    url.searchParams.set('query', message.trim());
-    
+    const BACKEND =
+      process.env.BACKEND_URL ?? "http://127.0.0.1:8000";// "https://duotkuerduot-qdoctor.hf.space";
+
+    const url = new URL(`${BACKEND}/ask/stream`);
+    url.searchParams.set("query", message.trim());
+
     const backendResponse = await fetch(url.toString(), {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Accept': 'application/json',
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
         ...(authorization ? { Authorization: authorization } : {}),
       },
-      body: '', // Empty body as shown in the curl example
+      body: JSON.stringify({
+        history: history || [],
+        session_id: session_id || null,
+        parent_id: parent_id || null,
+        assistant_retry: assistant_retry || false,
+      }),
     });
 
-    const respText = await backendResponse.text();
-
     if (!backendResponse.ok) {
-      console.error('Backend error:', backendResponse.status, respText);
-      return NextResponse.json(
-        { error: 'Backend error', detail: respText },
-        { status: backendResponse.status }
+      const errText = await backendResponse.text();
+      return new Response(
+        JSON.stringify({ error: "Backend error", detail: errText }),
+        { status: backendResponse.status, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    let data;
-    try {
-      data = JSON.parse(respText);
-    } catch {
-      data = { response: respText };
-    }
-
-    return NextResponse.json(data);
+    return new Response(backendResponse.body, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+      },
+    });
   } catch (error) {
-    console.error('Error forwarding request to backend:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+    console.error("Error forwarding request:", error);
+    return new Response(
+      JSON.stringify({ error: "Internal server error" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }

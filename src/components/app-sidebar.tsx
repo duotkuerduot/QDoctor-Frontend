@@ -5,12 +5,11 @@ import Link from "next/link"
 import {
   IconHelp,
   IconInnerShadowTop,
-  IconMessage,
   IconSearch,
   IconSettings,
 } from "@tabler/icons-react"
 
-import { NavDocuments } from "@/components/nav-documents"
+import { NavChatHistory } from "@/components/nav-chat-history"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { Button } from "@/components/ui/button"
@@ -41,23 +40,6 @@ const data = {
       title: "Search",
       url: "#",
       icon: IconSearch,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: IconMessage,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: IconMessage,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: IconMessage,
     },
   ],
 }
@@ -92,7 +74,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavDocuments items={data.documents} />
+        {/* Chat History — replaces the old static NavDocuments */}
+        <NavChatHistory />
+
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
