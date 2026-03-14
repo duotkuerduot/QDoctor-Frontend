@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     const BACKEND =
-      process.env.BACKEND_URL ?? "https://duotkuerduot-qdoctor.hf.space";
+      process.env.BACKEND_URL ?? "http://127.0.0.1:8000";//https://duotkuerduot-qdoctor.hf.space";
 
     const url = new URL(`${BACKEND}/ask/stream`);
     url.searchParams.set("query", message.trim());

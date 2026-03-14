@@ -24,6 +24,8 @@ import remarkGfm from "remark-gfm";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/provider/auth-provider";
+import { CitationChip } from "@/components/CitationChip";
+import { MessageContent } from "@/components/MessageContent";
 
 // ─── Types ─────────────────────────────────────────────────────
 interface VariantInfo {
@@ -166,50 +168,44 @@ const ChatScreen = () => {
   }, []);
 
   // ─── Reload session from backend (for variant accuracy) ─────
-  const reloadSession = useCallback(
-    async (sid: string) => {
-      const token = await getAuthToken();
-      if (!token) return;
+  const reloadSession = useCallback(async (sid: string) => {
+    const token = await getAuthToken();
+    if (!token) return;
 
-      try {
-        const res = await fetch(`/api/sessions/${sid}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
+    try {
+      const res = await fetch(`/api/sessions/${sid}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
 
-        const data = await res.json();
-        setMessages(parseBackendMessages(data.messages || []));
-      } catch (e) {
-        console.error("Failed to reload session:", e);
-      }
-    },
-    []
-  );
+      const data = await res.json();
+      setMessages(parseBackendMessages(data.messages || []));
+    } catch (e) {
+      console.error("Failed to reload session:", e);
+    }
+  }, []);
 
   // ─── Load session ────────────────────────────────────────────
-  const loadSession = useCallback(
-    async (sid: string) => {
-      const token = await getAuthToken();
-      if (!token) return;
+  const loadSession = useCallback(async (sid: string) => {
+    const token = await getAuthToken();
+    if (!token) return;
 
-      setIsLoadingSession(true);
-      try {
-        const res = await fetch(`/api/sessions/${sid}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
+    setIsLoadingSession(true);
+    try {
+      const res = await fetch(`/api/sessions/${sid}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
 
-        const data = await res.json();
-        setMessages(parseBackendMessages(data.messages || []));
-        setSessionId(sid);
-      } catch (e) {
-        console.error("Failed to load session:", e);
-      } finally {
-        setIsLoadingSession(false);
-      }
-    },
-    []
-  );
+      const data = await res.json();
+      setMessages(parseBackendMessages(data.messages || []));
+      setSessionId(sid);
+    } catch (e) {
+      console.error("Failed to load session:", e);
+    } finally {
+      setIsLoadingSession(false);
+    }
+  }, []);
 
   // ─── SSE streaming API call ──────────────────────────────────
   const sendMessage = useCallback(
@@ -219,7 +215,7 @@ const ChatScreen = () => {
       options?: {
         parentId?: string;
         assistantRetry?: boolean;
-      }
+      },
     ) => {
       if (isRequesting.current) return;
 
@@ -308,10 +304,8 @@ const ChatScreen = () => {
           const snapshot = contentSoFar;
           setMessages((prev) =>
             prev.map((msg) =>
-              msg.id === assistantLocalId
-                ? { ...msg, content: snapshot }
-                : msg
-            )
+              msg.id === assistantLocalId ? { ...msg, content: snapshot } : msg,
+            ),
           );
         });
 
@@ -343,7 +337,7 @@ const ChatScreen = () => {
                 window.history.replaceState(
                   null,
                   "",
-                  `/new?session=${d.session_id}`
+                  `/new?session=${d.session_id}`,
                 );
                 window.dispatchEvent(new CustomEvent("session-updated"));
               } else if (currentEvent === "msg_id") {
@@ -367,7 +361,7 @@ const ChatScreen = () => {
                   return prev.map((m, i) =>
                     i === idx
                       ? { ...m, dbId: userMsgDbId, parentDbId: userMsgParentId }
-                      : m
+                      : m,
                   );
                 });
               } else if (currentEvent === "assistant_msg_id") {
@@ -387,16 +381,15 @@ const ChatScreen = () => {
                   prev.map((msg) =>
                     msg.id === assistantLocalId
                       ? { ...msg, content: contentSoFar }
-                      : msg
-                  )
+                      : msg,
+                  ),
                 );
               } else if (currentEvent === "done") {
                 const capturedDbId = assistantMsgDbId;
                 const capturedParentDbId = assistantMsgParentId;
                 const capturedSources = [...sources];
                 const shouldReload = reloadAfterStream.current;
-                const reloadSid =
-                  receivedSessionId || sessionId;
+                const reloadSid = receivedSessionId || sessionId;
 
                 tokenQueue.finish(() => {
                   setMessages((prev) =>
@@ -409,8 +402,8 @@ const ChatScreen = () => {
                             dbId: capturedDbId,
                             parentDbId: capturedParentDbId,
                           }
-                        : msg
-                    )
+                        : msg,
+                    ),
                   );
 
                   // After edit/retry, reload from backend
@@ -443,8 +436,8 @@ const ChatScreen = () => {
                     dbId: assistantMsgDbId,
                     parentDbId: assistantMsgParentId,
                   }
-                : msg
-            )
+                : msg,
+            ),
           );
         });
       } catch (error) {
@@ -458,7 +451,7 @@ const ChatScreen = () => {
             return prev.map((msg) =>
               msg.id === assistantLocalId
                 ? { ...msg, content: errContent, isStreaming: false }
-                : msg
+                : msg,
             );
           }
           return [
@@ -476,14 +469,14 @@ const ChatScreen = () => {
         setIsTyping(false);
       }
     },
-    [openAuthModal, buildHistory, sessionId, reloadSession]
+    [openAuthModal, buildHistory, sessionId, reloadSession],
   );
 
   // ─── Initialization ──────────────────────────────────────────
   useEffect(() => {
     // Prevent re-initialization when URL changes (e.g., after replaceState)
     if (isInitialized.current) return;
-    
+
     const existingSession = searchParams.get("session");
     const initialQuery = searchParams.get("q");
 
@@ -793,9 +786,7 @@ const ChatScreen = () => {
 
                     <div
                       className={`flex-1 ${
-                        message.type === "user"
-                          ? "flex flex-col items-end"
-                          : ""
+                        message.type === "user" ? "flex flex-col items-end" : ""
                       }`}
                     >
                       {editingId === message.id ? (
@@ -812,10 +803,7 @@ const ChatScreen = () => {
                               if (e.key === "Escape") handleCancelEdit();
                             }}
                             className="w-full resize-none rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring min-h-[60px]"
-                            rows={Math.min(
-                              editValue.split("\n").length + 1,
-                              6
-                            )}
+                            rows={Math.min(editValue.split("\n").length + 1, 6)}
                           />
                           <div className="flex gap-2 justify-end">
                             <button
@@ -842,16 +830,10 @@ const ChatScreen = () => {
                                 : ""
                             }`}
                           >
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              className="prose prose-sm max-w-none"
-                            >
-                              {message.content}
-                            </ReactMarkdown>
-
-                            {message.isStreaming && (
-                              <span className="inline-block w-2 h-4 ml-0.5 bg-primary/70 animate-pulse rounded-sm" />
-                            )}
+                            <MessageContent
+                              content={message.content}
+                              isStreaming={message.isStreaming}
+                            />
                           </div>
 
                           {message.type === "assistant" &&
@@ -920,9 +902,7 @@ const ChatScreen = () => {
                               {hasVariants && (
                                 <div className="flex items-center gap-0.5 ml-1 select-none">
                                   <button
-                                    onClick={() =>
-                                      navigateVariant(message, -1)
-                                    }
+                                    onClick={() => navigateVariant(message, -1)}
                                     disabled={variantIndex <= 1}
                                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                   >
@@ -932,9 +912,7 @@ const ChatScreen = () => {
                                     {variantIndex}/{variantTotal}
                                   </span>
                                   <button
-                                    onClick={() =>
-                                      navigateVariant(message, 1)
-                                    }
+                                    onClick={() => navigateVariant(message, 1)}
                                     disabled={variantIndex >= variantTotal}
                                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                   >
