@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from "react"
 import Link from "next/link"
 import {
   IconHelp,
@@ -75,7 +76,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         {/* Chat History — replaces the old static NavDocuments */}
-        <NavChatHistory />
+        <Suspense fallback={null}>
+          <NavChatHistory />
+        </Suspense>
 
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
