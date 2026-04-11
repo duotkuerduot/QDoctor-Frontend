@@ -19,22 +19,33 @@ import {
 import ChatCard from "@/components/chat-input";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import ResponseRenderer from "@/components/ResponseRenderer";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/provider/auth-provider";
+import {
+  normalizeAnswerPayload,
+  type AnswerPayloadLike,
+  type Citation,
+  type LegacySourceMap,
+  type LegacySourcePayload,
+} from "@/lib/triage-answer";
 
 // ─── Types ─────────────────────────────────────────────────────
-interface VariantInfo {
+type SourceMap = LegacySourceMap;
+type SourcePayload = LegacySourcePayload;
+
+interface VariantInfo extends AnswerPayloadLike {
   id: string;
   content: string;
-  sources: string[];
+  sources?: SourcePayload;
 }
 
-interface BackendMessage {
+interface BackendMessage extends AnswerPayloadLike {
   id: string;
   role: string;
   content: string;
-  sources?: string[];
+  sources?: SourcePayload;
   parent_id?: string;
   created_at: string;
   _variants?: VariantInfo[];
@@ -47,11 +58,42 @@ interface Message {
   parentDbId?: string;
   type: "user" | "assistant";
   content: string;
+  answerText?: string;
+  citations?: Citation[];
   sources?: string[];
+  sourceMap?: SourceMap;
   timestamp: Date;
   isStreaming?: boolean;
+  isTriageAnswer?: boolean;
   variants?: VariantInfo[];
   activeVariant?: number;
+}
+
+function normalizeSources(
+  raw?: SourcePayload
+): { list: string[]; map?: SourceMap } {
+  if (!raw) return { list: [], map: undefined };
+  if (Array.isArray(raw)) return { list: raw, map: undefined };
+  if (typeof raw === "object") {
+    const map = raw as SourceMap;
+    return { list: Object.keys(map), map };
+  }
+  return { list: [], map: undefined };
+}
+
+function getMessageAnswerState(
+  payload?: Partial<AnswerPayloadLike>
+): Pick<Message, "content" | "answerText" | "citations" | "sources" | "sourceMap"> {
+  const normalizedAnswer = normalizeAnswerPayload(payload);
+  const { list, map } = normalizeSources(payload?.sources);
+
+  return {
+    content: normalizedAnswer.answerText,
+    answerText: normalizedAnswer.answerText || undefined,
+    citations: normalizedAnswer.citations,
+    sources: list,
+    sourceMap: map,
+  };
 }
 
 // ─── Token queue ───────────────────────────────────────────────
@@ -101,17 +143,24 @@ async function getAuthToken(): Promise<string | null> {
 }
 
 function parseBackendMessages(raw: BackendMessage[]): Message[] {
-  return raw.map((m, i) => ({
-    id: i + 1,
-    dbId: m.id,
-    parentDbId: m.parent_id || undefined,
-    type: m.role as "user" | "assistant",
-    content: m.content,
-    sources: m.sources || [],
-    timestamp: new Date(m.created_at),
-    variants: m._variants || undefined,
-    activeVariant: m._active_variant ?? undefined,
-  }));
+  return raw.map((m, i) => {
+    const answerState = getMessageAnswerState(m);
+    return {
+      id: i + 1,
+      dbId: m.id,
+      parentDbId: m.parent_id || undefined,
+      type: m.role as "user" | "assistant",
+      content: answerState.content || m.content,
+      answerText: answerState.answerText,
+      citations: answerState.citations,
+      sources: answerState.sources,
+      sourceMap: answerState.sourceMap,
+      timestamp: new Date(m.created_at),
+      variants: m._variants || undefined,
+      activeVariant: m._active_variant ?? undefined,
+      isTriageAnswer: m.role === "assistant",
+    };
+  });
 }
 
 // ─── Chat Screen ───────────────────────────────────────────────
@@ -280,13 +329,31 @@ export default function ChatScreen() {
 
         const decoder = new TextDecoder();
         let buffer = "";
-        let sources: string[] = [];
+        let sourcesList: string[] = [];
+        let sourcesMap: SourceMap | undefined;
+        let citations: Citation[] = [];
         let streamError: string | null = null;
         let receivedSessionId: string | null = null;
         let userMsgDbId: string | undefined;
         let userMsgParentId: string | undefined;
         let assistantMsgDbId: string | undefined;
         let assistantMsgParentId: string | undefined;
+        let didReceiveFinalResponse = false;
+
+        const updateAssistantMessage = (update: Partial<Message>) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantLocalId
+                ? {
+                    ...msg,
+                    ...update,
+                    isTriageAnswer:
+                      update.isTriageAnswer ?? msg.isTriageAnswer ?? true,
+                  }
+                : msg
+            )
+          );
+        };
 
         setIsTyping(false);
         setMessages((prev) => [
@@ -295,22 +362,22 @@ export default function ChatScreen() {
             id: assistantLocalId,
             type: "assistant",
             content: "",
+            answerText: "",
             isStreaming: true,
+            isTriageAnswer: true,
             timestamp: new Date(),
           },
         ]);
 
         let contentSoFar = "";
         const tokenQueue = new TokenQueue((tk: string) => {
+          if (didReceiveFinalResponse) return;
           contentSoFar += tk;
           const snapshot = contentSoFar;
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantLocalId
-                ? { ...msg, content: snapshot }
-                : msg
-            )
-          );
+          updateAssistantMessage({
+            content: snapshot,
+            answerText: snapshot,
+          });
         });
 
         while (true) {
@@ -377,39 +444,76 @@ export default function ChatScreen() {
                 assistantMsgParentId = d.parent_id || undefined;
               } else if (currentEvent === "token") {
                 tokenQueue.push(data as string);
+              } else if (currentEvent === "citations") {
+                const normalized = normalizeAnswerPayload({
+                  citations: Array.isArray(data) ? data : [],
+                });
+                citations = normalized.citations;
+                updateAssistantMessage({ citations });
               } else if (currentEvent === "sources") {
-                sources = data as string[];
+                const normalized = normalizeSources(data as SourcePayload);
+                sourcesList = normalized.list;
+                sourcesMap = normalized.map;
+                updateAssistantMessage({
+                  sources: sourcesList,
+                  sourceMap: sourcesMap,
+                });
+              } else if (currentEvent === "response") {
+                const responsePayload = data as AnswerPayloadLike;
+                const normalizedAnswer = normalizeAnswerPayload(responsePayload);
+                const normalizedSources =
+                  responsePayload.sources !== undefined
+                    ? normalizeSources(responsePayload.sources)
+                    : undefined;
+
+                didReceiveFinalResponse = true;
+                contentSoFar = normalizedAnswer.answerText || contentSoFar;
+                if (Array.isArray(responsePayload.citations)) {
+                  citations = normalizedAnswer.citations;
+                }
+                if (normalizedSources) {
+                  sourcesList = normalizedSources.list;
+                  sourcesMap = normalizedSources.map;
+                }
+
+                updateAssistantMessage({
+                  content: contentSoFar,
+                  answerText: contentSoFar,
+                  citations,
+                  sources: sourcesList,
+                  sourceMap: sourcesMap,
+                });
               } else if (currentEvent === "replace") {
+                if (didReceiveFinalResponse) continue;
                 contentSoFar = data as string;
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantLocalId
-                      ? { ...msg, content: contentSoFar }
-                      : msg
-                  )
-                );
+                updateAssistantMessage({
+                  content: contentSoFar,
+                  answerText: contentSoFar,
+                });
               } else if (currentEvent === "done") {
                 const capturedDbId = assistantMsgDbId;
                 const capturedParentDbId = assistantMsgParentId;
-                const capturedSources = [...sources];
+                const capturedSources = [...sourcesList];
+                const capturedSourceMap = sourcesMap
+                  ? { ...sourcesMap }
+                  : undefined;
+                const capturedCitations = [...citations];
+                const capturedAnswerText = contentSoFar;
                 const shouldReload = reloadAfterStream.current;
                 const reloadSid =
                   receivedSessionId || sessionId;
 
                 tokenQueue.finish(() => {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantLocalId
-                        ? {
-                            ...msg,
-                            isStreaming: false,
-                            sources: capturedSources,
-                            dbId: capturedDbId,
-                            parentDbId: capturedParentDbId,
-                          }
-                        : msg
-                    )
-                  );
+                  updateAssistantMessage({
+                    content: capturedAnswerText,
+                    answerText: capturedAnswerText,
+                    citations: capturedCitations,
+                    isStreaming: false,
+                    sources: capturedSources,
+                    sourceMap: capturedSourceMap,
+                    dbId: capturedDbId,
+                    parentDbId: capturedParentDbId,
+                  });
 
                   // After edit/retry, reload from backend
                   // to get accurate variant counts
@@ -431,19 +535,16 @@ export default function ChatScreen() {
 
         // Safety net
         tokenQueue.finish(() => {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantLocalId && msg.isStreaming
-                ? {
-                    ...msg,
-                    isStreaming: false,
-                    sources,
-                    dbId: assistantMsgDbId,
-                    parentDbId: assistantMsgParentId,
-                  }
-                : msg
-            )
-          );
+          updateAssistantMessage({
+            content: contentSoFar,
+            answerText: contentSoFar,
+            citations,
+            isStreaming: false,
+            sources: sourcesList,
+            sourceMap: sourcesMap,
+            dbId: assistantMsgDbId,
+            parentDbId: assistantMsgParentId,
+          });
         });
       } catch (error) {
         setIsTyping(false);
@@ -455,7 +556,14 @@ export default function ChatScreen() {
           if (hasStreaming) {
             return prev.map((msg) =>
               msg.id === assistantLocalId
-                ? { ...msg, content: errContent, isStreaming: false }
+                ? {
+                    ...msg,
+                    content: errContent,
+                    answerText: undefined,
+                    citations: undefined,
+                    isStreaming: false,
+                    isTriageAnswer: false,
+                  }
                 : msg
             );
           }
@@ -465,6 +573,7 @@ export default function ChatScreen() {
               id: assistantLocalId,
               type: "assistant" as const,
               content: errContent,
+              isTriageAnswer: false,
               timestamp: new Date(),
             },
           ];
@@ -771,6 +880,8 @@ export default function ChatScreen() {
                   message.variants && message.variants.length > 1;
                 const variantIndex = (message.activeVariant ?? 0) + 1;
                 const variantTotal = message.variants?.length ?? 1;
+                const isTriageAssistant =
+                  message.type === "assistant" && message.isTriageAnswer;
 
                 return (
                   <div
@@ -840,35 +951,30 @@ export default function ChatScreen() {
                                 : ""
                             }`}
                           >
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              className="prose prose-sm max-w-none"
-                            >
-                              {message.content}
-                            </ReactMarkdown>
+                            {isTriageAssistant ? (
+                              <ResponseRenderer
+                                responseData={{
+                                  answer_text: message.answerText,
+                                  answer: message.content,
+                                  citations: message.citations,
+                                  sources: message.sourceMap ?? message.sources,
+                                }}
+                                inline
+                                className="max-w-none"
+                              />
+                            ) : (
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                className="prose prose-sm max-w-none"
+                              >
+                                {message.content}
+                              </ReactMarkdown>
+                            )}
 
                             {message.isStreaming && (
                               <span className="inline-block w-2 h-4 ml-0.5 bg-primary/70 animate-pulse rounded-sm" />
                             )}
                           </div>
-
-                          {message.type === "assistant" &&
-                          !message.isStreaming &&
-                          message.sources?.length ? (
-                            <div className="text-xs text-gray-500 mb-1">
-                              <div className="font-medium mb-1">Sources:</div>
-                              <div className="flex flex-wrap gap-1">
-                                {message.sources.map((src, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded"
-                                  >
-                                    {src.replace(".pdf", "")}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
 
                           {!message.isStreaming && message.content && (
                             <div
